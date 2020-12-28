@@ -158,12 +158,12 @@ func main() {
 				fmt.Println("No chain loaded")
 				continue
 			}
-			if err := chain.Parse(); err != nil {
+			hash, err := readHex("Enter token hash: ")
+			if err != nil {
 				fmt.Println(err)
 				continue
 			}
-			hash, err := readHex("Enter token hash: ")
-			if err != nil {
+			if err := chain.Parse(); err != nil {
 				fmt.Println(err)
 				continue
 			}
@@ -316,12 +316,12 @@ func main() {
 				fmt.Println("No chain loaded")
 				continue
 			}
-			if err := chain.Parse(); err != nil {
+			hash, err := readHex("Enter swap hash: ")
+			if err != nil {
 				fmt.Println(err)
 				continue
 			}
-			hash, err := readHex("Enter swap hash: ")
-			if err != nil {
+			if err := chain.Parse(); err != nil {
 				fmt.Println(err)
 				continue
 			}
@@ -333,12 +333,12 @@ func main() {
 			fmt.Println("Left side:")
 			fmt.Println("  Account =", swap.Left().Account)
 			fmt.Printf("  Token = %s (Hash = %s)\n", swap.Left().Token.Name(), hashToString(swap.Left().Token.Hash()))
-			fmt.Println("  Amount =", swap.Left().Amount)
+			fmt.Println("  Amount =", amountToString(swap.Left().Amount, swap.Left().Token.Decimals()))
 			fmt.Println("Right side:")
 			fmt.Println("  Account =", swap.Right().Account)
 			if swap.Right().Token != nil {
 				fmt.Printf("  Token = %s (Hash = %s)\n", swap.Right().Token.Name(), hashToString(swap.Right().Token.Hash()))
-				fmt.Println("  Amount =", swap.Right().Amount)
+				fmt.Println("  Amount =", amountToString(swap.Right().Amount, swap.Right().Token.Decimals()))
 			}
 			fmt.Println("Active =", swap.Active())
 		case "q":
