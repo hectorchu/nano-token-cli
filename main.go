@@ -5,14 +5,18 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
-	"strconv"
 	"strings"
 
+	"github.com/hectorchu/gonano/rpc"
 	"github.com/hectorchu/gonano/util"
 	"github.com/hectorchu/nano-token-protocol/tokenchain"
 )
 
 const rpcURL = "https://mynano.ninja/api/node"
+
+func hashToString(hash rpc.BlockHash) string {
+	return strings.ToUpper(hex.EncodeToString(hash))
+}
 
 func main() {
 	var chain *tokenchain.Chain
@@ -48,8 +52,9 @@ func main() {
 			fmt.Println("\nChain", chain.Address())
 			fmt.Println("Tokens:")
 			for _, token := range chain.Tokens() {
-				hash := strings.ToUpper(hex.EncodeToString(token.Hash()))
-				fmt.Printf("%s: Hash=%s, Supply=%s\n", token.Name(), hash, amountToString(token.Supply(), token.Decimals()))
+				fmt.Printf("%s: Hash=%s, Supply=%s\n",
+					token.Name(), hashToString(token.Hash()),
+					amountToString(token.Supply(), token.Decimals()))
 			}
 		}
 		fmt.Println("\nChoose option:")
@@ -61,10 +66,15 @@ func main() {
 		fmt.Println("(g) Create a token")
 		fmt.Println("(b) Get balances for a token")
 		fmt.Println("(t) Transfer a token")
+		fmt.Println("(sp) Propose a swap")
+		fmt.Println("(sa) Accept a swap")
+		fmt.Println("(sc) Confirm a swap")
+		fmt.Println("(sn) Cancel a swap")
+		fmt.Println("(si) Get swap details")
 		fmt.Println("(q) Quit")
-		switch input := readLine("> "); input {
+		switch input := readString("> "); input {
 		case "w":
-			seed, err := hex.DecodeString(readLine("Enter seed: "))
+			seed, err := readHex("Enter seed: ")
 			if err != nil {
 				fmt.Println(err)
 				continue
@@ -78,7 +88,7 @@ func main() {
 				continue
 			}
 		case "a":
-			index, err := strconv.Atoi(readLine("Enter account index: "))
+			index, err := readInt("Enter account index: ")
 			if err != nil {
 				fmt.Println(err)
 				continue
@@ -104,7 +114,7 @@ func main() {
 			}
 		case "l":
 			var err error
-			if chain, err = tokenchain.LoadChain(readLine("Enter address: "), rpcURL); err != nil {
+			if chain, err = tokenchain.LoadChain(readString("Enter address: "), rpcURL); err != nil {
 				fmt.Println(err)
 				continue
 			}
@@ -123,13 +133,13 @@ func main() {
 				fmt.Println("No chain loaded")
 				continue
 			}
-			name := readLine("Enter name: ")
-			supply, ok := new(big.Int).SetString(readLine("Enter supply: "), 10)
-			if !ok {
-				fmt.Println("Failed reading supply")
+			name := readString("Enter name: ")
+			supply, err := readAmount("Enter supply: ")
+			if err != nil {
+				fmt.Println(err)
 				continue
 			}
-			decimals, err := strconv.Atoi(readLine("Enter decimals: "))
+			decimals, err := readInt("Enter decimals: ")
 			if err != nil {
 				fmt.Println(err)
 				continue
@@ -139,13 +149,13 @@ func main() {
 				fmt.Println(err)
 				continue
 			}
-			fmt.Println("Token created with hash", strings.ToUpper(hex.EncodeToString(token.Hash())))
+			fmt.Println("Token created with hash", hashToString(token.Hash()))
 		case "b":
 			if chain == nil {
 				fmt.Println("No chain loaded")
 				continue
 			}
-			hash, err := hex.DecodeString(readLine("Enter token hash: "))
+			hash, err := readHex("Enter token hash: ")
 			if err != nil {
 				fmt.Println(err)
 				continue
@@ -168,7 +178,7 @@ func main() {
 				fmt.Println("No chain loaded")
 				continue
 			}
-			hash, err := hex.DecodeString(readLine("Enter token hash: "))
+			hash, err := readHex("Enter token hash: ")
 			if err != nil {
 				fmt.Println(err)
 				continue
@@ -178,8 +188,8 @@ func main() {
 				fmt.Println(err)
 				continue
 			}
-			destination := readLine("Enter destination account: ")
-			amount, err := amountFromString(readLine("Enter amount: "), token.Decimals())
+			destination := readString("Enter destination account: ")
+			amount, err := readAmountWithDecimals("Enter amount: ", token.Decimals())
 			if err != nil {
 				fmt.Println(err)
 				continue
@@ -188,7 +198,138 @@ func main() {
 				fmt.Println(err)
 				continue
 			}
-			fmt.Println("Token transferred with hash", strings.ToUpper(hex.EncodeToString(hash)))
+			fmt.Println("Token transferred with hash", hashToString(hash))
+		case "sp":
+			if chain == nil {
+				fmt.Println("No chain loaded")
+				continue
+			}
+			counterparty := readString("Enter counterparty account: ")
+			hash, err := readHex("Enter token hash: ")
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			token, err := chain.Token(hash)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			amount, err := readAmountWithDecimals("Enter amount: ", token.Decimals())
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			swap, err := tokenchain.ProposeSwap(chain, wallet.account(), counterparty, token, amount)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			fmt.Println("Swap created with hash", hashToString(swap.Hash()))
+		case "sa":
+			if chain == nil {
+				fmt.Println("No chain loaded")
+				continue
+			}
+			hash, err := readHex("Enter swap hash: ")
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			swap, err := chain.Swap(hash)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			hash, err = readHex("Enter token hash: ")
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			token, err := chain.Token(hash)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			amount, err := readAmountWithDecimals("Enter amount: ", token.Decimals())
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			hash, err = swap.Accept(wallet.account(), token, amount)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			fmt.Println("Swap accepted with hash", hashToString(hash))
+		case "sc":
+			if chain == nil {
+				fmt.Println("No chain loaded")
+				continue
+			}
+			hash, err := readHex("Enter swap hash: ")
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			swap, err := chain.Swap(hash)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			hash, err = swap.Confirm(wallet.account())
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			fmt.Println("Swap confirmed with hash", hashToString(hash))
+		case "sn":
+			if chain == nil {
+				fmt.Println("No chain loaded")
+				continue
+			}
+			hash, err := readHex("Enter swap hash: ")
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			swap, err := chain.Swap(hash)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			hash, err = swap.Cancel(wallet.account())
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			fmt.Println("Swap cancelled with hash", hashToString(hash))
+		case "si":
+			if chain == nil {
+				fmt.Println("No chain loaded")
+				continue
+			}
+			hash, err := readHex("Enter swap hash: ")
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			swap, err := chain.Swap(hash)
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			fmt.Println("Left side:")
+			fmt.Println("  Account =", swap.Left().Account)
+			fmt.Printf("  Token = %s (Hash = %s)\n", swap.Left().Token.Name(), hashToString(swap.Left().Token.Hash()))
+			fmt.Println("  Amount =", swap.Left().Amount)
+			fmt.Println("Right side:")
+			fmt.Println("  Account =", swap.Right().Account)
+			if swap.Right().Token != nil {
+				fmt.Printf("  Token = %s (Hash = %s)\n", swap.Right().Token.Name(), hashToString(swap.Right().Token.Hash()))
+				fmt.Println("  Amount =", swap.Right().Amount)
+			}
+			fmt.Println("Active =", swap.Active())
 		case "q":
 			return
 		default:
