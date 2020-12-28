@@ -1,114 +1,46 @@
 package main
 
 import (
-	"bufio"
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"math/big"
-	"os"
 	"strconv"
 	"strings"
 
 	"github.com/hectorchu/gonano/util"
-	"github.com/hectorchu/gonano/wallet"
-	"github.com/hectorchu/nano-token-server/tokenchain"
+	"github.com/hectorchu/nano-token-protocol/tokenchain"
 )
 
 const rpcURL = "https://mynano.ninja/api/node"
 
-var reader = bufio.NewReader(os.Stdin)
-
-func readLine(prompt string) (input string) {
-	fmt.Print(prompt)
-	input, err := reader.ReadString('\n')
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	return strings.TrimRight(input, "\r\n")
-}
-
-func initAccount(seed []byte) (a *wallet.Account, err error) {
-	w, err := wallet.NewWallet(seed)
-	if err != nil {
-		return
-	}
-	w.RPC.URL = rpcURL
-	return w.NewAccount(nil)
-}
-
-func initAccountFromFile() (a *wallet.Account, err error) {
-	f, err := os.Open("seed.bin")
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	seed := make([]byte, 32)
-	if _, err = f.Read(seed); err != nil {
-		return
-	}
-	return initAccount(seed)
-}
-
-func saveSeed(seed []byte) (err error) {
-	f, err := os.Create("seed.bin")
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	_, err = f.Write(seed)
-	return
-}
-
-func amountToString(amount *big.Int, decimals byte) string {
-	x := big.NewInt(10)
-	exp := x.Exp(x, big.NewInt(int64(decimals)), nil)
-	r := new(big.Rat).SetFrac(amount, exp)
-	return r.FloatString(int(decimals))
-}
-
-func amountFromString(s string, decimals byte) (amount *big.Int, err error) {
-	x := big.NewInt(10)
-	exp := x.Exp(x, big.NewInt(int64(decimals)), nil)
-	r, ok := new(big.Rat).SetString(s)
-	if !ok {
-		return nil, errors.New("Unable to parse amount")
-	}
-	r = r.Mul(r, new(big.Rat).SetInt(exp))
-	if !r.IsInt() {
-		return nil, errors.New("Unable to parse amount")
-	}
-	return r.Num(), nil
-}
-
 func main() {
 	var chain *tokenchain.Chain
-	account, err := initAccountFromFile()
+	wallet, err := loadWallet(rpcURL)
 	if err != nil {
 		seed := make([]byte, 32)
 		rand.Read(seed)
-		if account, err = initAccount(seed); err != nil {
+		if wallet, err = newWallet(seed, rpcURL); err != nil {
 			fmt.Println(err)
-		} else if err = saveSeed(seed); err != nil {
+		} else if err = wallet.save(); err != nil {
 			fmt.Println(err)
 		}
 	}
 	for {
-		for account != nil {
-			balance, pending, err := account.Balance()
+		for wallet.account() != nil {
+			balance, pending, err := wallet.account().Balance()
 			if err != nil {
 				fmt.Println(err)
 			} else {
 				if pending.Sign() > 0 {
-					if err = account.ReceivePendings(); err != nil {
+					fmt.Println("Receiving pending amounts...")
+					if err = wallet.account().ReceivePendings(); err != nil {
 						fmt.Println(err)
 					} else {
 						continue
 					}
 				}
-				fmt.Printf("\nAccount %s, Balance = %s\n", account.Address(), util.NanoAmount{Raw: balance})
+				fmt.Printf("\nAccount %s, Balance = %s\n", wallet.account().Address(), util.NanoAmount{Raw: balance})
 			}
 			break
 		}
@@ -122,6 +54,7 @@ func main() {
 		}
 		fmt.Println("\nChoose option:")
 		fmt.Println("(w) Set the wallet seed")
+		fmt.Println("(a) Change account index")
 		fmt.Println("(c) Create a new token chain")
 		fmt.Println("(l) Load a token chain")
 		fmt.Println("(p) Parse the chain")
@@ -136,11 +69,21 @@ func main() {
 				fmt.Println(err)
 				continue
 			}
-			if account, err = initAccount(seed); err != nil {
+			if wallet, err = newWallet(seed, rpcURL); err != nil {
 				fmt.Println(err)
 				continue
 			}
-			if err = saveSeed(seed); err != nil {
+			if err = wallet.save(); err != nil {
+				fmt.Println(err)
+				continue
+			}
+		case "a":
+			index, err := strconv.Atoi(readLine("Enter account index: "))
+			if err != nil {
+				fmt.Println(err)
+				continue
+			}
+			if err = wallet.changeAccount(uint32(index)); err != nil {
 				fmt.Println(err)
 				continue
 			}
@@ -151,7 +94,7 @@ func main() {
 				continue
 			}
 			fmt.Println("Initializing new chain at", chain.Address())
-			if _, err = account.Send(chain.Address(), big.NewInt(1)); err != nil {
+			if _, err = wallet.account().Send(chain.Address(), big.NewInt(1)); err != nil {
 				fmt.Println(err)
 				continue
 			}
@@ -191,7 +134,7 @@ func main() {
 				fmt.Println(err)
 				continue
 			}
-			token, err := tokenchain.TokenGenesis(chain, account, name, supply, byte(decimals))
+			token, err := tokenchain.TokenGenesis(chain, wallet.account(), name, supply, byte(decimals))
 			if err != nil {
 				fmt.Println(err)
 				continue
@@ -214,7 +157,11 @@ func main() {
 			}
 			fmt.Println("Balances:")
 			for account, balance := range token.Balances() {
-				fmt.Printf("%s = %s %s\n", account, amountToString(balance, token.Decimals()), token.Name())
+				caret := " "
+				if account == wallet.account().Address() {
+					caret = ">"
+				}
+				fmt.Printf("%s %s = %s %s\n", caret, account, amountToString(balance, token.Decimals()), token.Name())
 			}
 		case "t":
 			if chain == nil {
@@ -237,7 +184,7 @@ func main() {
 				fmt.Println(err)
 				continue
 			}
-			if hash, err = token.Transfer(account, destination, amount); err != nil {
+			if hash, err = token.Transfer(wallet.account(), destination, amount); err != nil {
 				fmt.Println(err)
 				continue
 			}
