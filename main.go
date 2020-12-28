@@ -49,6 +49,9 @@ func main() {
 			break
 		}
 		if chain != nil {
+			if err := chain.Parse(); err != nil {
+				fmt.Println(err)
+			}
 			fmt.Println("\nChain", chain.Address())
 			fmt.Println("Tokens:")
 			for _, token := range chain.Tokens() {
@@ -153,6 +156,10 @@ func main() {
 		case "b":
 			if chain == nil {
 				fmt.Println("No chain loaded")
+				continue
+			}
+			if err := chain.Parse(); err != nil {
+				fmt.Println(err)
 				continue
 			}
 			hash, err := readHex("Enter token hash: ")
@@ -307,6 +314,10 @@ func main() {
 		case "si":
 			if chain == nil {
 				fmt.Println("No chain loaded")
+				continue
+			}
+			if err := chain.Parse(); err != nil {
+				fmt.Println(err)
 				continue
 			}
 			hash, err := readHex("Enter swap hash: ")
