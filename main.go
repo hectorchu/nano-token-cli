@@ -137,12 +137,12 @@ func main() {
 				continue
 			}
 			name := readString("Enter name: ")
-			supply, err := readAmount("Enter supply: ")
+			decimals, err := readInt("Enter decimals: ")
 			if err != nil {
 				fmt.Println(err)
 				continue
 			}
-			decimals, err := readInt("Enter decimals: ")
+			supply, err := readAmountWithDecimals("Enter supply: ", byte(decimals))
 			if err != nil {
 				fmt.Println(err)
 				continue
